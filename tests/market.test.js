@@ -45,7 +45,9 @@ test('el adaptador traduce el dialecto del proveedor al modelo de dominio', asyn
 
   const snap = await adapter.getSnapshot();
   assert.equal(snap.clock.label, '2015 T1');
-  assert.equal(snap.companies.length, 4);
+  assert.equal(snap.companies.length, 6);
+  assert.deepEqual(snap.funds.map((f) => f.name).sort(), ['Azvalor', 'Cobas AM']);
+  assert.ok(snap.funds.every((f) => f.nav === 100));
 
   const atym = snap.companies.find((c) => c.ticker === 'ATYM');
   assert.ok(atym.leverage < 0, 'Atalaya tiene caja neta');
@@ -60,4 +62,18 @@ test('el adaptador traduce el dialecto del proveedor al modelo de dominio', asyn
 
   const next = await adapter.advance();
   assert.equal(next.clock.label, '2015 T2');
+});
+
+test('los fondos de referencia invierten según sus movimientos y cobran comisión', () => {
+  const svc = new MockMarketService({ semilla: 11 });
+  for (const f of svc.obtenerFondos()) {
+    const invertido = Object.values(f.pesos).reduce((a, b) => a + b, 0);
+    assert.ok(Math.abs(invertido + f.caja - 1) < 1e-9, 'pesos + caja = 100%');
+  }
+  const r = svc.avanzarTrimestre();
+  for (const f of r.fondos) {
+    assert.ok(f.valor > 50 && f.valor < 200);
+    const vendidas = r.movimientosFondos.filter((m) => m.fondo === f.fondo && m.movimiento === 'VENDE');
+    for (const m of vendidas) assert.equal(f.pesos[m.simbolo], undefined, `${f.fondo} sale de ${m.simbolo}`);
+  }
 });

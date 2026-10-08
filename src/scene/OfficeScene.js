@@ -1,5 +1,8 @@
 import { iso, drawBox, boxSilhouette, shade, depthOf, wallQuadLeft, wallQuadRight, floorQuad } from './iso.js';
 import { DomEvents, emit, on } from '../bridge/domEvents.js';
+import { Penthouse } from './Penthouse.js';
+import { Cat } from './Cat.js';
+import { todForQuarter } from './timeOfDay.js';
 
 /* global Phaser */
 
@@ -56,16 +59,22 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor(C.bg);
+    // Cámara transparente: debajo se ve la SkyScene (Madrid desde la planta 58).
+    this.penthouse = new Penthouse(this);
+    this.penthouse.buildExterior();
 
     this.buildRoom();
-    this.buildWindow();
+    this.penthouse.buildGlassWall();
     this.buildWallDecor();
     this.buildProps();
     this.buildManagerDesk();
     this.buildAnalyst();
     this.buildBotServer();
     this.buildAmbient();
+    this.penthouse.buildRailingAndMast();
+    this.penthouse.buildUpgrades();
+    this.cat = new Cat(this);
+    this.penthouse.setTimeOfDay('night');
 
     this.layout();
     this.scale.on('resize', this.layout, this);
@@ -74,18 +83,25 @@ export class OfficeScene extends Phaser.Scene {
       on(DomEvents.ANALYST_MOOD, ({ mood, message }) => this.setAnalystMood(mood, message)),
       on(DomEvents.BOT_STATE, ({ state }) => this.setBotState(state)),
       on(DomEvents.MARKET_PULSE, (pulse) => this.marketPulse(pulse)),
+      on(DomEvents.MARKET_CLOCK, ({ index }) => this.penthouse.setTimeOfDay(todForQuarter(index))),
+      on(DomEvents.OFFICE_LEVEL, ({ level }) => this.penthouse.setLevel(level)),
     );
     this.events.once('shutdown', () => this.disposers.forEach((dispose) => dispose()));
 
     emit(DomEvents.SCENE_READY);
   }
 
-  /** Encaja la habitación en cualquier tamaño de ventana. */
+  update(time, delta) {
+    this.cat.update(delta);
+    this.penthouse.update(delta);
+  }
+
+  /** Encaja la habitación (y un buen trozo de rascacielos) en cualquier ventana. */
   layout() {
     const { width, height } = this.scale;
-    const zoom = Phaser.Math.Clamp(Math.min(width / 700, (height - 150) / 520), 0.45, 1.9);
+    const zoom = Phaser.Math.Clamp(Math.min(width / 760, (height - 130) / 600), 0.42, 1.7);
     this.cameras.main.setZoom(zoom);
-    this.cameras.main.centerOn(0, 92);
+    this.cameras.main.centerOn(0, 120);
   }
 
   // ── Estructura ───────────────────────────────────────────────────────────
@@ -106,17 +122,14 @@ export class OfficeScene extends Phaser.Scene {
       g.lineBetween(c.x, c.y, d.x, d.y);
     }
 
-    // Paredes traseras con zócalo y remate superior.
+    // Pared izquierda maciza (la derecha es un muro cortina de cristal: ver Penthouse).
     const walls = this.add.graphics().setDepth(1);
     walls.fillStyle(C.wallL, 1).fillPoints(wallQuadLeft(0, 0, ROOM, WALL_H), true);
-    walls.fillStyle(C.wallR, 1).fillPoints(wallQuadRight(0, 0, ROOM, WALL_H), true);
     // Paneles verticales sutiles (textura de papel pintado retro).
     walls.lineStyle(1, shade(C.wallL, 1.12), 0.35);
     for (let i = 0.5; i < ROOM; i += 0.5) {
       const l0 = iso(0, i, 12), l1 = iso(0, i, WALL_H - 6);
-      const r0 = iso(i, 0, 12), r1 = iso(i, 0, WALL_H - 6);
       walls.lineBetween(l0.x, l0.y, l1.x, l1.y);
-      walls.lineBetween(r0.x, r0.y, r1.x, r1.y);
     }
     walls.fillStyle(C.baseboard, 1).fillPoints(wallQuadLeft(0, 0, ROOM, 10), true);
     walls.fillStyle(shade(C.baseboard, 0.8), 1).fillPoints(wallQuadRight(0, 0, ROOM, 10), true);
@@ -127,55 +140,6 @@ export class OfficeScene extends Phaser.Scene {
     // Arista de la esquina.
     const k0 = iso(0, 0, 0), k1 = iso(0, 0, WALL_H);
     walls.lineStyle(2, shade(C.wallR, 0.7), 1).lineBetween(k0.x, k0.y, k1.x, k1.y);
-  }
-
-  buildWindow() {
-    const x0 = 4.5, w = 2.4, z0 = 46, h = 80;
-    const sky = this.add.graphics().setDepth(2);
-
-    // Cielo nocturno en bandas (degradado "pixelado").
-    const bands = [0x141a3a, 0x1b2150, 0x272a63, 0x3a2f6e, 0x5a3878];
-    bands.forEach((color, i) => {
-      sky.fillStyle(color, 1).fillPoints(wallQuadRight(x0, z0 + (h * (bands.length - 1 - i)) / bands.length, w, h / bands.length), true);
-    });
-    // Luna.
-    const moon = iso(x0 + 1.8, 0, z0 + 62);
-    sky.fillStyle(0xfff4c9, 1).fillCircle(moon.x, moon.y, 6);
-    sky.fillStyle(0xfff4c9, 0.15).fillCircle(moon.x, moon.y, 13);
-
-    // Skyline con ventanas que titilan.
-    const buildings = [
-      [0.0, 0.35, 34], [0.35, 0.3, 52], [0.65, 0.4, 26], [1.05, 0.25, 60],
-      [1.3, 0.45, 38], [1.75, 0.3, 46], [2.05, 0.35, 30],
-    ];
-    const windowSpots = [];
-    for (const [bx, bw, bh] of buildings) {
-      sky.fillStyle(0x0d1024, 1).fillPoints(wallQuadRight(x0 + bx, z0, bw, bh), true);
-      for (let wz = z0 + 6; wz < z0 + bh - 4; wz += 7) {
-        for (let wx = bx + 0.06; wx < bx + bw - 0.06; wx += 0.11) windowSpots.push(wallQuadRight(x0 + wx, wz, 0.05, 3));
-      }
-    }
-    const lights = this.add.graphics().setDepth(2.1);
-    const twinkle = () => {
-      lights.clear();
-      for (const quad of windowSpots) {
-        if (Math.random() < 0.38) lights.fillStyle(Math.random() < 0.85 ? 0xffd27a : 0x7ad7ff, 0.9).fillPoints(quad, true);
-      }
-    };
-    twinkle();
-    this.time.addEvent({ delay: 1400, loop: true, callback: twinkle });
-
-    // Marco y cruceta.
-    const frame = this.add.graphics().setDepth(2.2);
-    frame.lineStyle(4, C.woodDark, 1).strokePoints(wallQuadRight(x0, z0, w, h), true);
-    frame.lineStyle(2, C.woodDark, 1);
-    const m0 = iso(x0 + w / 2, 0, z0), m1 = iso(x0 + w / 2, 0, z0 + h);
-    frame.lineBetween(m0.x, m0.y, m1.x, m1.y);
-    frame.fillStyle(shade(C.woodDark, 1.2), 1).fillPoints([iso(x0 - 0.05, 0, z0), iso(x0 + w + 0.05, 0, z0), iso(x0 + w + 0.05, 0.18, z0), iso(x0 - 0.05, 0.18, z0)], true);
-
-    // Haz de luz de luna sobre el suelo.
-    const beam = this.add.graphics().setDepth(3).setBlendMode(Phaser.BlendModes.ADD);
-    beam.fillStyle(0x7f9cff, 0.07).fillPoints([iso(x0, 0, z0 + h), iso(x0 + w, 0, z0 + h), iso(x0 + w + 0.8, 3.6), iso(x0 + 0.8, 3.6)], true);
   }
 
   buildWallDecor() {
@@ -207,7 +171,7 @@ export class OfficeScene extends Phaser.Scene {
     this.add.text(mos.x, mos.y, 'MARGIN OF SAFETY', { fontFamily: FONT, fontSize: '6px', color: '#3b2a20' }).setOrigin(0.5).setRotation(angle).setDepth(6.1);
 
     // Reloj de pared con segundero real.
-    const clock = iso(0.9, 0, 112);
+    const clock = iso(0, 1.1, 112);
     const cg = this.add.graphics().setDepth(6);
     cg.fillStyle(0xf3ead2, 1).fillEllipse(clock.x, clock.y, 22, 26);
     cg.lineStyle(2, C.woodDark, 1).strokeEllipse(clock.x, clock.y, 22, 26);
@@ -276,13 +240,14 @@ export class OfficeScene extends Phaser.Scene {
     drawBox(lamp, 8.82, 4.52, 0.06, 0.06, 80, 0x222428, { outline: false });
     drawBox(lamp, 8.62, 4.32, 0.46, 0.46, 18, 0xf2c57c, { z: 78 });
     const pool = this.add.graphics().setDepth(7.5).setBlendMode(Phaser.BlendModes.ADD);
+    this.lampLights = [pool];
     const pc = iso(8.85, 4.55);
     pool.fillStyle(0xffb35c, 0.08).fillEllipse(pc.x, pc.y, 220, 110);
     pool.fillStyle(0xffb35c, 0.07).fillEllipse(pc.x, pc.y, 120, 60);
     const halo = this.add.graphics().setDepth(200).setBlendMode(Phaser.BlendModes.ADD);
     const hc = iso(8.85, 4.55, 86);
     halo.fillStyle(0xffd28a, 0.12).fillCircle(hc.x, hc.y, 34);
-    this.tweens.add({ targets: halo, alpha: { from: 1, to: 0.8 }, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    this.lampLights.push(halo);
 
     // Cableado del servidor a la mesa del gestor.
     const cable = this.add.graphics().setDepth(8);

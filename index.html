@@ -26,6 +26,7 @@
           <small>THE VALUE TYCOON</small>
         </div>
       </div>
+      <span class="where hide-sm" data-hud="where">Planta 58 · Castellana, Madrid</span>
       <dl class="hud-stats">
         <div><dt>TRIMESTRE</dt><dd data-hud="quarter">—</dd></div>
         <div><dt>NAV</dt><dd><span data-hud="nav">—</span> <small data-hud="return"></small></dd></div>
@@ -33,6 +34,7 @@
         <div><dt>ALPHA</dt><dd data-hud="alpha">—</dd></div>
         <div class="hide-sm"><dt>RANGO</dt><dd data-hud="rank" class="rank">—</dd></div>
       </dl>
+      <button id="mute" class="mute" aria-label="Silenciar sonido" aria-pressed="false">🔊</button>
     </header>
 
     <!-- ░░ Dock de accesos rápidos ░░ -->
@@ -82,6 +84,9 @@
 
     <!-- ░░ Alerta de Override ░░ -->
     <div id="override-layer" hidden></div>
+
+    <!-- ░░ Carta a los partícipes (fin de partida) ░░ -->
+    <div id="report-layer" class="modal-layer" hidden></div>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
 

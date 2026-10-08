@@ -50,6 +50,13 @@
  * @property {FundFiling[]}       filings
  * @property {MarketEvent|null}   event
  * @property {number}             benchmark   Índice de referencia (base 100)
+ * @property {FundTracker[]}      funds       Fondos de referencia que el bot sigue
+ *
+ * @typedef {Object} FundTracker
+ * @property {string} name
+ * @property {number} nav                      Valor liquidativo (base 100)
+ * @property {number} cash                     Peso en liquidez (0–1)
+ * @property {Record<string, number>} weights  Peso por ticker (0–1)
  *
  * @typedef {Object} OrderRequest
  * @property {string}          ticker

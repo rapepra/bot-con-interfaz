@@ -6,7 +6,7 @@
  * (p. ej. una escena 3D o una UI en React) sin tocar la otra.
  */
 export const DomEvents = Object.freeze({
-  /** Phaser → DOM. detail: { target: 'manager' | 'analyst' | 'bot' } */
+  /** Phaser → DOM. detail: { target: 'manager' | 'analyst' | 'bot' | 'cat' } */
   OFFICE_INTERACT: 'capitalclub:office-interact',
   /** DOM → Phaser. detail: { mood: 'idle' | 'sweat' | 'bulb', message?: string } */
   ANALYST_MOOD: 'capitalclub:analyst-mood',
@@ -14,6 +14,10 @@ export const DomEvents = Object.freeze({
   BOT_STATE: 'capitalclub:bot-state',
   /** DOM → Phaser. detail: { tone: 'positive' | 'negative' | 'neutral', magnitude: number } */
   MARKET_PULSE: 'capitalclub:market-pulse',
+  /** DOM → Phaser. detail: { index, label } — el reloj de mercado avanza (hora del día). */
+  MARKET_CLOCK: 'capitalclub:market-clock',
+  /** DOM → Phaser. detail: { level: 0..4 } — mejoras de oficina según el rango. */
+  OFFICE_LEVEL: 'capitalclub:office-level',
   /** Phaser → DOM. La escena terminó de construirse. */
   SCENE_READY: 'capitalclub:scene-ready',
 });

@@ -22,7 +22,7 @@ export class Portfolio {
     this.realizedPnl = 0;
     /** @type {import('./MarketAdapter.js').Fill[]} */
     this.trades = [];
-    /** @type {{label:string, nav:number, benchmark:number}[]} */
+    /** @type {{label:string, nav:number, benchmark:number, funds:Record<string, number>}[]} */
     this.navHistory = [];
   }
 
@@ -89,10 +89,11 @@ export class Portfolio {
     return this.cash + this.marketValue(prices);
   }
 
-  record(label, nav, benchmark) {
+  /** Guarda el punto del trimestre (y el NAV de los fondos rivales, base 100). */
+  record(label, nav, benchmark, funds = {}) {
     const last = this.navHistory.at(-1);
     if (last?.label === label) this.navHistory.pop();
-    this.navHistory.push({ label, nav, benchmark });
+    this.navHistory.push({ label, nav, benchmark, funds });
   }
 }
 

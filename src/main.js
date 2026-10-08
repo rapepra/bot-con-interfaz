@@ -20,10 +20,14 @@ import { MockMarketAdapter } from './core/mock/MockMarketAdapter.js';
 import { Portfolio, priceMap } from './core/Portfolio.js';
 import { TradingBot } from './core/TradingBot.js';
 import { OfficeScene } from './scene/OfficeScene.js';
+import { SkyScene } from './scene/SkyScene.js';
 import { DomEvents, emit, on } from './bridge/domEvents.js';
-import { PanelManager, renderPortfolio, renderResearch, renderBotConsole } from './ui/panels.js';
+import { PanelManager, renderPortfolio, renderResearch, renderBotConsole, renderReport, standings } from './ui/panels.js';
+import { sfx, toggleMute, isMuted } from './ui/sound.js';
+import { checkAchievements, QUOTES } from './ui/achievements.js';
+import { TIME_OF_DAY, todForQuarter } from './scene/timeOfDay.js';
 import { OverrideAlert } from './ui/OverrideAlert.js';
-import { renderHud, renderTicker, toast, runBoot, rankFor } from './ui/hud.js';
+import { renderHud, renderTicker, toast, runBoot, rankFor, rankLevel } from './ui/hud.js';
 import { pct, price, esc } from './ui/format.js';
 
 /* global Phaser */
@@ -39,6 +43,11 @@ class GameController {
     this.snapshot = null;
     this.busy = false;
     this.lastRank = null;
+    this.achievements = new Set();
+    this.stats = { manualBuys: 0, catPets: 0 };
+    this.reportShown = false;
+    /** Trimestre en el que se cierra la partida y llega la carta anual (2025 T1 = 10 años). */
+    this.finalQuarter = 40;
 
     this.panels = new PanelManager({
       portfolio: $('#panel-portfolio'),
@@ -54,7 +63,8 @@ class GameController {
     this.snapshot = await this.adapter.getSnapshot();
 
     await runBoot($('#boot'), [
-      'CAPITAL CLUB OS v0.1 · (c) 1997 Deep Value Systems',
+      'CAPITAL CLUB OS v0.2 · (c) 1997 Deep Value Systems',
+      'UBICACIÓN: PLANTA 58 · PASEO DE LA CASTELLANA, MADRID',
       'MEM CHECK ............................. <b>640K OK</b>',
       'CARGANDO MOTOR FINANCIERO ............. <b>OK</b>',
       `ADAPTADOR: ${esc(connection.provider)} ... <b>CONECTADO</b>`,
@@ -87,14 +97,17 @@ class GameController {
     }
     this.busy = true;
     this.advanceBtn.classList.add('loading');
+    sfx.advance();
 
     this.snapshot = await this.adapter.advance();
+    emit(DomEvents.MARKET_CLOCK, this.snapshot.clock);
     const { event } = this.snapshot;
     const avgChange = this.snapshot.companies.reduce((s, c) => s + c.change, 0) / this.snapshot.companies.length;
     emit(DomEvents.MARKET_PULSE, {
       tone: event?.tone ?? (avgChange > 0.02 ? 'positive' : avgChange < -0.02 ? 'negative' : 'neutral'),
       magnitude: Math.max(event?.magnitude ?? 0, Math.abs(avgChange)),
     });
+    if (event?.tone === 'negative' && event.magnitude > 0.1) sfx.crash();
     if (event) {
       toast($('#toasts'), `<span class="tag">${event.historical ? 'HISTÓRICO' : 'ÚLTIMA HORA'}</span>${esc(event.headline)}`, `news ${event.tone}`, 6000);
     }
@@ -110,26 +123,71 @@ class GameController {
     this.updateAnalyst();
     this.refresh();
     this.checkRank();
+    this.yearEndRecap();
 
     this.advanceBtn.classList.remove('loading');
     this.busy = false;
     await this.resolvePendingOrders();
+    this.checkProgress();
+    if (this.snapshot.clock.index >= this.finalQuarter && !this.reportShown) await this.showReport();
+  }
+
+  /** Cada cierre de año: cómo vas en la liga. */
+  yearEndRecap() {
+    const { index, label } = this.snapshot.clock;
+    if (index === 0 || index % 4 !== 0) return;
+    const rows = standings(this.portfolio);
+    const year = Number(label.slice(0, 4)) - 1;
+    const pos = rows.findIndex((r) => r.key === 'fund') + 1;
+    const summary = rows.map((r) => `${r.key === 'fund' ? '<b>Tú</b>' : esc(r.label)} ${pct(r.total, 0)}`).join(' · ');
+    toast($('#toasts'), `<span class="tag">CIERRE ${year}</span>${pos === 1 ? '👑 ' : ''}${pos}º en la liga — ${summary}`, 'rank', 7000);
+  }
+
+  /** Logros nuevos → sonido y notificación. */
+  checkProgress() {
+    const fresh = checkAchievements(this.achievements, {
+      bot: this.bot,
+      snapshot: this.snapshot,
+      stats: this.stats,
+      alpha: this.alpha.alpha,
+      price: (t) => this.snapshot.companies.find((c) => c.ticker === t)?.price,
+      league: Object.fromEntries(standings(this.portfolio).map((r) => [r.key, r.value])),
+    });
+    fresh.forEach((a, i) => setTimeout(() => {
+      sfx.achievement();
+      toast($('#toasts'), `${a.icon} Logro desbloqueado: <b>${esc(a.title)}</b> — ${esc(a.desc)}`, 'rank', 5500);
+    }, i * 700));
+    if (fresh.length) this.refresh();
+  }
+
+  async showReport() {
+    this.reportShown = true;
+    sfx.achievement();
+    const first = this.portfolio.navHistory[0]?.label ?? '';
+    const choice = await renderReport($('#report-layer'), {
+      portfolio: this.portfolio, bot: this.bot, rank: rankFor(this.alpha.alpha), achievements: this.achievements,
+      from: first, to: this.snapshot.clock.label,
+    });
+    if (choice === 'new') location.search = `?seed=${Math.floor(Math.random() * 1e6)}`;
   }
 
   /** Human-in-the-Loop: cada venta propuesta pasa por la alerta de Override. */
   async resolvePendingOrders() {
     while (this.bot.pendingOrders.size) {
       emit(DomEvents.BOT_STATE, { state: 'alert' });
+      sfx.alarm();
       this.refresh();
       const order = this.bot.pendingOrders.values().next().value;
       const decision = await this.alert.prompt(order, { queueSize: this.bot.pendingOrders.size });
 
       if (decision === 'override') {
         this.bot.override(order.id);
+        sfx.lock();
         toast($('#toasts'), `🔒 <b>${order.ticker}</b> bajo control manual. El bot no la venderá.`, 'human');
       } else {
         const fill = await this.bot.confirmSell(order.id);
         if (fill) {
+          sfx.cash();
           const pnl = fill.price / order.avgCost - 1;
           toast($('#toasts'), `💰 Vendidas ${fill.quantity} <b>${fill.ticker}</b> a ${price(fill.price)} (${pct(pnl)})`, 'trade');
         }
@@ -149,15 +207,36 @@ class GameController {
 
   wireUi() {
     on(DomEvents.OFFICE_INTERACT, ({ target }) => {
+      if (target === 'cat') {
+        this.stats.catPets += 1;
+        sfx.meow();
+        toast($('#toasts'), `🐈 <b>Graham</b>: ${esc(QUOTES[Math.floor(Math.random() * QUOTES.length)])}`, 'human', 5500);
+        this.checkProgress();
+        return;
+      }
       const panel = { manager: 'portfolio', analyst: 'research', bot: 'bot' }[target];
+      sfx.click();
       if (panel) this.panels.open(panel);
     });
     on(DomEvents.SCENE_READY, () => {
       emit(DomEvents.BOT_STATE, { state: this.bot.autopilot ? 'idle' : 'sleep' });
+      emit(DomEvents.MARKET_CLOCK, this.snapshot.clock);
+      emit(DomEvents.OFFICE_LEVEL, { level: rankLevel(this.alpha.alpha) });
       this.updateAnalyst();
     });
 
     this.advanceBtn.addEventListener('click', () => this.advanceQuarter());
+    const mute = $('#mute');
+    const paintMute = () => {
+      mute.textContent = isMuted() ? '🔇' : '🔊';
+      mute.setAttribute('aria-pressed', String(isMuted()));
+    };
+    paintMute();
+    mute.addEventListener('click', () => {
+      toggleMute();
+      paintMute();
+      sfx.click();
+    });
     document.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('click', () => this.panels.open(btn.dataset.open)));
 
     // Delegación de acciones dentro de los paneles.
@@ -169,6 +248,16 @@ class GameController {
         const locked = this.portfolio.get(ticker)?.locked;
         this.bot.setLock(ticker, !locked);
         toast($('#toasts'), locked ? `🤖 <b>${ticker}</b> vuelve al bot.` : `🔒 <b>${ticker}</b> bloqueada: control manual.`, 'human');
+      } else if (action === 'buy') {
+        const fill = await this.bot.manualBuy(ticker, 0.05);
+        if (fill) {
+          this.stats.manualBuys += 1;
+          sfx.cash();
+          toast($('#toasts'), `🧠 Compra manual: ${fill.quantity} <b>${ticker}</b> a ${price(fill.price)} · posición MANUAL`, 'human');
+          this.checkProgress();
+        } else {
+          toast($('#toasts'), 'Sin liquidez suficiente para esa compra.', 'news negative');
+        }
       } else if (action === 'sell') {
         const fill = await this.bot.manualSell(ticker);
         if (fill) toast($('#toasts'), `Venta manual: ${fill.quantity} <b>${ticker}</b> a ${price(fill.price)}`, 'human');
@@ -179,9 +268,11 @@ class GameController {
     });
 
     window.addEventListener('keydown', (event) => {
-      if (this.alert.isOpen || event.target.closest?.('input, textarea')) return;
+      if (event.target.closest?.('input, textarea')) return;
+      // Espacio nunca "pulsa" el botón enfocado: evita overrides accidentales.
+      if (event.code === 'Space') event.preventDefault();
+      if (this.alert.isOpen || !$('#report-layer').hidden) return;
       if (event.code === 'Space') {
-        event.preventDefault();
         this.advanceQuarter();
       } else if (event.key === 'Escape') {
         this.panels.close();
@@ -202,7 +293,7 @@ class GameController {
       backgroundColor: '#0b0a12',
       antialias: true,
       scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight },
-      scene: [OfficeScene],
+      scene: [SkyScene, OfficeScene],
     });
   }
 
@@ -213,7 +304,8 @@ class GameController {
   }
 
   recordNav() {
-    this.portfolio.record(this.snapshot.clock.label, this.nav, this.snapshot.benchmark);
+    const funds = Object.fromEntries(this.snapshot.funds.map((f) => [f.name, f.nav]));
+    this.portfolio.record(this.snapshot.clock.label, this.nav, this.snapshot.benchmark, funds);
   }
 
   get alpha() {
@@ -224,9 +316,10 @@ class GameController {
   }
 
   refresh() {
-    const ctx = { snapshot: this.snapshot, portfolio: this.portfolio, bot: this.bot, adapterName: this.adapter.name };
+    const ctx = { snapshot: this.snapshot, portfolio: this.portfolio, bot: this.bot, adapterName: this.adapter.name, achievements: this.achievements };
     const { totalReturn, alpha } = this.alpha;
-    renderHud($('#hud'), { clock: this.snapshot.clock, nav: this.nav, totalReturn, alpha, cash: this.portfolio.cash });
+    const timeOfDay = TIME_OF_DAY[todForQuarter(this.snapshot.clock.index)].label;
+    renderHud($('#hud'), { clock: this.snapshot.clock, nav: this.nav, totalReturn, alpha, cash: this.portfolio.cash, timeOfDay });
     renderTicker($('#ticker-track'), this.snapshot);
     renderPortfolio($('#panel-portfolio .panel-body'), ctx);
     renderResearch($('#panel-research .panel-body'), ctx);
@@ -258,8 +351,12 @@ class GameController {
   checkRank() {
     const rank = rankFor(this.alpha.alpha);
     if (this.lastRank && rank !== this.lastRank) {
-      toast($('#toasts'), `🏆 Nuevo rango: <b>${rank}</b>`, 'rank', 5000);
+      const up = rankLevel(this.alpha.alpha) > this.lastLevel;
+      if (up) sfx.achievement();
+      toast($('#toasts'), `${up ? '🏆' : '📉'} Nuevo rango: <b>${rank}</b>${up ? ' · ¡la oficina mejora!' : ''}`, 'rank', 5000);
     }
+    this.lastLevel = rankLevel(this.alpha.alpha);
+    emit(DomEvents.OFFICE_LEVEL, { level: this.lastLevel });
     this.lastRank = rank;
   }
 }

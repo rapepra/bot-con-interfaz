@@ -1,7 +1,8 @@
 # ◆ Capital Club: The Value Tycoon
 
-Simulador gamificado de **Value Investing**. Diriges un fondo *Deep Value* desde un
-despacho isométrico lo-fi de los 90. Un bot institucional copia los movimientos de
+Simulador gamificado de **Value Investing**. Diriges un fondo *Deep Value* desde el
+ático de un rascacielos en la Castellana de Madrid (planta 58, con vistas a las
+Cuatro Torres y la Sierra de Guadarrama). Un bot institucional copia los movimientos de
 grandes gestoras value (Azvalor, Cobas) y, cuando va a vender, **tú puedes pulsar el
 gran botón rojo de OVERRIDE** y quedarte la posición en modo manual.
 
@@ -13,7 +14,24 @@ gran botón rojo de OVERRIDE** y quedarte la posición en modo manual.
 ```bash
 npm start          # http://localhost:8080  (servidor estático, sin build)
 npm test           # tests del motor financiero y del bot (node:test, sin dependencias)
+npm run backtest   # Monte Carlo: ¿el bot bate a los fondos que copia? (mercado sintético)
 ```
+
+## Qué hay en el juego
+
+- **Ático en un rascacielos** con ciclo de luz por trimestre (T1 amanecer, T2
+  mediodía, T3 atardecer, T4 noche). Skyline inspirado en Madrid, nubes por debajo
+  del forjado y fachada de muro cortina.
+- **Liga de la Castellana**: tu NAV frente a réplicas simuladas de Cobas AM,
+  Azvalor y el índice. Resumen al cierre de cada año y *Carta a los partícipes*
+  tras 10 años.
+- **Human-in-the-Loop**: alertas de venta con OVERRIDE, posiciones manuales y
+  compras discrecionales desde el radar.
+- **Progresión**: rangos que cambian la oficina (de la caja de cartón del becario
+  al toro dorado, el acuario y el trofeo), logros y Graham, el gato filósofo.
+- **Sonido** sintetizado con WebAudio (botón 🔊 para silenciarlo).
+
+Para llevarlo a dinero real, lee [docs/CAMINO_A_REAL.md](docs/CAMINO_A_REAL.md).
 
 Hay que servirlo por HTTP: los módulos ES no cargan desde `file://`.
 Añade `?seed=1234` a la URL para repetir una partida exacta.
@@ -29,8 +47,8 @@ src/
 ├─ core/                      ← Núcleo lógico. Sin DOM, sin Phaser: corre en Node.
 │  ├─ MarketAdapter.js        Contrato abstracto + modelo de dominio (JSDoc)
 │  ├─ mock/
-│  │  ├─ marketData.js        4 empresas value + eventos históricos (dialecto del "proveedor")
-│  │  ├─ MockMarketService.js Simulador trimestral: avanzarTrimestre(), ejecutarOrden()
+│  │  ├─ marketData.js        6 empresas value + eventos históricos (dialecto del "proveedor")
+│  │  ├─ MockMarketService.js Simulador trimestral + réplicas de los fondos de referencia
 │  │  └─ MockMarketAdapter.js Traduce el dialecto del mock al dominio del juego
 │  ├─ TradingBot.js           Estrategia + Human-in-the-Loop (propone ventas, acepta overrides)
 │  ├─ Portfolio.js            Libro de posiciones, NAV, P&L
@@ -38,6 +56,9 @@ src/
 ├─ bridge/domEvents.js        Contrato Phaser ⇄ DOM (CustomEvents en window)
 ├─ scene/
 │  ├─ iso.js                  Proyección isométrica 2:1 y "voxels" con primitivas
+│  ├─ SkyScene.js             Telón de fondo: cielo, skyline de Madrid, nubes
+│  ├─ Penthouse.js            Fachada, muro cortina, barandilla, luz y mejoras
+│  ├─ Cat.js · timeOfDay.js   El gato Graham y las paletas de hora del día
 │  └─ OfficeScene.js          Despacho, Analista, Servidor-Bot, interactividad
 ├─ ui/                        Terminales (Portfolio, Research, Bot), alerta Override, HUD
 ├─ styles/terminal.css        Bloomberg retro × glassmorphism

@@ -123,6 +123,24 @@ export class TradingBot extends Emitter {
     return fill;
   }
 
+  /**
+   * Compra discrecional del gestor: invierte una fracción del NAV y deja la
+   * posición en modo MANUAL (es tu convicción, no la del algoritmo).
+   */
+  async manualBuy(ticker, fractionOfNav = 0.05) {
+    const company = this.snapshot?.companies.find((c) => c.ticker === ticker);
+    if (!company) return null;
+    const nav = this.portfolio.nav(priceMap(this.snapshot.companies));
+    const budget = Math.min(nav * fractionOfNav, this.portfolio.cash - 10);
+    const quantity = Math.floor(budget / (company.price * 1.003));
+    if (quantity <= 0) return null;
+    const fill = await this.#execute({ ticker, side: 'BUY', quantity });
+    this.portfolio.lock(ticker, { price: fill.price, label: this.snapshot.clock.label });
+    this.#log('human', `Compra manual del gestor: ${fill.quantity} ${ticker} @ ${fill.price.toFixed(2)}. Posición MANUAL.`);
+    this.emit('change');
+    return fill;
+  }
+
   setAutopilot(on) {
     this.autopilot = on;
     this.#log('human', on ? 'Autopiloto ACTIVADO.' : 'Autopiloto DESACTIVADO.');

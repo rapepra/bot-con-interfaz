@@ -119,3 +119,11 @@ test('autopiloto OFF: el bot solo observa', async () => {
   await bot.evaluate(adapter.snapshot);
   assert.equal(portfolio.positions.length, 0);
 });
+
+test('compra manual: invierte y deja la posición bajo control del gestor', async () => {
+  const { portfolio, bot, adapter } = await setup([company({ upside: 0.05 })], []);
+  bot.snapshot = adapter.snapshot;
+  const fill = await bot.manualBuy('AAA', 0.1);
+  assert.ok(Math.abs(fill.quantity * 10 - 10_000) < 100);
+  assert.equal(portfolio.get('AAA').locked, true);
+});

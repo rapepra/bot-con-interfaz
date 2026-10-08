@@ -13,8 +13,14 @@ export function rankFor(alpha) {
   return RANKS.filter(([min]) => alpha >= min).at(-1)[1];
 }
 
-export function renderHud(el, { clock, nav, totalReturn, alpha, cash }) {
+/** Nivel 0–4 del rango (desbloquea mejoras de oficina). */
+export function rankLevel(alpha) {
+  return RANKS.filter(([min]) => alpha >= min).length - 1;
+}
+
+export function renderHud(el, { clock, nav, totalReturn, alpha, cash, timeOfDay }) {
   el.querySelector('[data-hud=quarter]').textContent = clock.label;
+  el.querySelector('[data-hud=where]').textContent = `Planta 58 · Castellana, Madrid · ${timeOfDay}`;
   el.querySelector('[data-hud=nav]').textContent = money(nav);
   const ret = el.querySelector('[data-hud=return]');
   ret.textContent = pct(totalReturn);

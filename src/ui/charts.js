@@ -22,20 +22,39 @@ export function sparkline(values, { width = 96, height = 28, target = null } = {
   </svg>`;
 }
 
+/** Series del gráfico de la liga: color validado (CVD) por entidad, nunca por rango. */
+export const LEAGUE_SERIES = [
+  { key: 'fund', label: 'Capital Club', cls: 'fund' },
+  { key: 'Cobas AM', label: 'Cobas AM', cls: 'cobas' },
+  { key: 'Azvalor', label: 'Azvalor', cls: 'azvalor' },
+  { key: 'bench', label: 'Índice', cls: 'bench' },
+];
+
+/** Normaliza el histórico a base 100 para cada competidor de la liga. */
+export function leagueSeries(history, initialCash) {
+  const b0 = history[0]?.benchmark ?? 100;
+  return {
+    fund: history.map((h) => (h.nav / initialCash) * 100),
+    'Cobas AM': history.map((h) => h.funds?.['Cobas AM'] ?? 100),
+    Azvalor: history.map((h) => h.funds?.Azvalor ?? 100),
+    bench: history.map((h) => (h.benchmark / b0) * 100),
+  };
+}
+
 /**
- * Gráfico NAV del fondo vs índice de referencia, ambos indexados a base 100
- * (un único eje). El fondo es la serie protagonista; el índice, contexto en gris.
- * Leyenda + etiquetas directas al final + crosshair con tooltip al pasar el ratón.
+ * Gráfico de la liga: tu fondo frente a Cobas AM, Azvalor y el índice, todo en
+ * base 100 (un único eje). Leyenda + etiquetas directas al final (con
+ * anticolisión) + crosshair con tooltip.
  */
 export function navChart(history, initialCash) {
   if (history.length < 2) {
     return `<div class="chart-empty">El histórico aparecerá al avanzar el primer trimestre.</div>`;
   }
-  const W = 640, H = 170, L = 38, R = 64, T = 12, B = 22;
-  const fund = history.map((h) => (h.nav / initialCash) * 100);
-  const bench = history.map((h) => (h.benchmark / history[0].benchmark) * 100);
-  const min = Math.min(...fund, ...bench) * 0.97;
-  const max = Math.max(...fund, ...bench) * 1.03;
+  const W = 640, H = 190, L = 38, R = 112, T = 12, B = 22;
+  const data = leagueSeries(history, initialCash);
+  const all = Object.values(data).flat();
+  const min = Math.min(...all) * 0.97;
+  const max = Math.max(...all) * 1.03;
   const x = (i) => L + (i / (history.length - 1)) * (W - L - R);
   const y = (v) => T + (1 - (v - min) / (max - min)) * (H - T - B);
   const path = (series) => series.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
@@ -49,29 +68,35 @@ export function navChart(history, initialCash) {
     .join('');
 
   const last = history.length - 1;
-  const data = history.map((h, i) => ({ label: h.label, fund: fund[i], bench: bench[i], nav: h.nav }));
+  // Etiquetas directas: se ordenan por altura y se separan al menos 12px.
+  const ends = LEAGUE_SERIES.map((s) => ({ ...s, v: data[s.key][last], ly: y(data[s.key][last]) })).sort((a, b) => a.ly - b.ly);
+  for (let i = 1; i < ends.length; i++) ends[i].ly = Math.max(ends[i].ly, ends[i - 1].ly + 12);
+  const labels = ends
+    .map((e) => `<text class="direct ${e.cls}" x="${x(last) + 8}" y="${e.ly + 4}">${esc(e.label)} ${e.v.toFixed(0)}</text>`)
+    .join('');
 
-  return `<div class="nav-chart" data-points='${esc(JSON.stringify(data))}' data-geom='${JSON.stringify({ W, L, R, n: history.length })}'>
+  // Se pintan de atrás adelante: índice, rivales y tu fondo encima.
+  const lines = [...LEAGUE_SERIES].reverse().map((s) => `<path class="line ${s.cls}" d="${path(data[s.key])}"/>`).join('');
+  const points = history.map((h, i) => ({ label: h.label, nav: h.nav, ...Object.fromEntries(LEAGUE_SERIES.map((s) => [s.key, data[s.key][i]])) }));
+
+  return `<div class="nav-chart" data-points='${esc(JSON.stringify(points))}' data-geom='${JSON.stringify({ W, L, R, n: history.length })}'>
     <div class="legend" role="list">
-      <span role="listitem"><i class="sw fund"></i>Capital Club (NAV)</span>
-      <span role="listitem"><i class="sw bench"></i>Índice de referencia</span>
+      ${LEAGUE_SERIES.map((s) => `<span role="listitem"><i class="sw ${s.cls}"></i>${s.label}</span>`).join('')}
       <span class="legend-note">base 100</span>
     </div>
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución del NAV frente al índice de referencia">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Liga: Capital Club frente a Cobas AM, Azvalor y el índice">
       ${ticks}${xLabels}
       <line x1="${L}" x2="${W - R}" y1="${y(100)}" y2="${y(100)}" class="base100"/>
-      <path class="line bench" d="${path(bench)}"/>
-      <path class="line fund" d="${path(fund)}"/>
-      <circle class="end fund" cx="${x(last)}" cy="${y(fund[last])}" r="4"/>
-      <text class="direct" x="${x(last) + 8}" y="${y(fund[last]) + 4}">${fund[last].toFixed(0)}</text>
-      <text class="direct muted" x="${x(last) + 8}" y="${y(bench[last]) + 4}">${bench[last].toFixed(0)}</text>
+      ${lines}
+      <circle class="end fund" cx="${x(last)}" cy="${y(data.fund[last])}" r="4"/>
+      ${labels}
       <line class="crosshair" y1="${T}" y2="${H - B}" x1="0" x2="0"/>
     </svg>
     <div class="chart-tip" hidden></div>
   </div>`;
 }
 
-/** Activa crosshair + tooltip en todos los navChart dentro de `root`. */
+/** Activa crosshair + tooltip en el gráfico de liga dentro de `root`. */
 export function bindNavChart(root) {
   const chart = root.querySelector('.nav-chart');
   if (!chart) return;
@@ -84,16 +109,17 @@ export function bindNavChart(root) {
   svg.addEventListener('pointermove', (event) => {
     const rect = svg.getBoundingClientRect();
     const vx = ((event.clientX - rect.left) / rect.width) * W;
-    const i = Math.round(((vx - L) / (W - L - R)) * (n - 1));
-    const p = points[Math.max(0, Math.min(n - 1, i))];
-    const px = L + (points.indexOf(p) / (n - 1)) * (W - L - R);
+    const i = Math.max(0, Math.min(n - 1, Math.round(((vx - L) / (W - L - R)) * (n - 1))));
+    const p = points[i];
+    const px = L + (i / (n - 1)) * (W - L - R);
     cross.setAttribute('x1', px);
     cross.setAttribute('x2', px);
     cross.style.opacity = 1;
     tip.hidden = false;
-    tip.innerHTML = `<b>${esc(p.label)}</b><span><i class="sw fund"></i>NAV ${money(p.nav)} · ${pct(p.fund / 100 - 1)}</span><span><i class="sw bench"></i>Índice ${pct(p.bench / 100 - 1)}</span>`;
+    tip.innerHTML = `<b>${esc(p.label)}</b>` +
+      LEAGUE_SERIES.map((s) => `<span><i class="sw ${s.cls}"></i>${s.label} ${pct(p[s.key] / 100 - 1)}${s.key === 'fund' ? ` · ${money(p.nav)}` : ''}</span>`).join('');
     const left = (px / W) * rect.width;
-    tip.style.left = `${Math.min(rect.width - 190, Math.max(0, left + 12))}px`;
+    tip.style.left = `${Math.min(rect.width - 220, Math.max(0, left + 12))}px`;
   });
   svg.addEventListener('pointerleave', () => {
     cross.style.opacity = 0;

@@ -38,6 +38,9 @@ export class MockMarketService {
     amortizacionDeuda: 0.04, // fracción del EBITDA anual que amortiza deuda cada trimestre
     suavizadoObjetivo: 0.25,
     probEventoSintetico: 0.2,
+    comisionFondo: 0.0045, // ~1,8% anual de comisión de gestión de los fondos
+    rentabilidadCaja: 0.004,
+    inversionMaximaFondo: 0.95,
     slippage: 0.0015,
     comision: 0.001,
     comisionMinima: 5,
@@ -51,6 +54,7 @@ export class MockMarketService {
   #indiceReferencia = 100;
   #ultimoEvento = null;
   #movimientosFondos = [];
+  #fondos = [];
 
   /**
    * @param {Object} [opciones]
@@ -68,6 +72,8 @@ export class MockMarketService {
       return empresa;
     });
     this.#movimientosFondos = this.#calcularMovimientosFondos();
+    this.#fondos = [...new Set(this.#empresas.map((e) => e.fondo))].map((fondo) => ({ fondo, valor: 100, caja: 1, pesos: {} }));
+    this.#rebalancearFondos({ inicial: true });
   }
 
   // ── API pública del proveedor ────────────────────────────────────────────
@@ -112,6 +118,11 @@ export class MockMarketService {
 
   obtenerIndiceReferencia() {
     return this.#indiceReferencia;
+  }
+
+  /** Valor liquidativo simulado (base 100) y cartera de cada fondo de referencia. */
+  obtenerFondos() {
+    return this.#fondos.map((f) => ({ ...f, pesos: { ...f.pesos } }));
   }
 
   /**
@@ -170,8 +181,12 @@ export class MockMarketService {
       : 0;
     this.#indiceReferencia *= Math.exp(0.018 + this.#rng.normal(0, 0.045) + impactoMedio * 0.5);
 
-    // 4. Los fondos reportan sus movimientos (como en sus cartas trimestrales).
+    // 4. Los fondos de referencia viven el trimestre con su cartera…
+    this.#actualizarValorFondos();
+
+    // 5. …y reportan sus movimientos (como en sus cartas trimestrales).
     this.#movimientosFondos = this.#calcularMovimientosFondos();
+    this.#rebalancearFondos();
 
     return {
       reloj: this.obtenerReloj(),
@@ -179,6 +194,7 @@ export class MockMarketService {
       evento: this.obtenerUltimoEvento(),
       movimientosFondos: this.obtenerMovimientosFondos(),
       indiceReferencia: this.#indiceReferencia,
+      fondos: this.obtenerFondos(),
     };
   }
 
@@ -233,6 +249,49 @@ export class MockMarketService {
       return { ...this.#rng.pick(EVENTOS_SINTETICOS), historico: false };
     }
     return null;
+  }
+
+  /** Aplica a cada fondo la rentabilidad de su cartera, menos comisiones. */
+  #actualizarValorFondos() {
+    const P = MockMarketService.PARAMETROS;
+    for (const f of this.#fondos) {
+      let bruto = f.caja * P.rentabilidadCaja;
+      const nuevos = {};
+      for (const [simbolo, peso] of Object.entries(f.pesos)) {
+        const e = this.#empresas.find((em) => em.simbolo === simbolo);
+        const r = e.precio / e.precioAnterior - 1;
+        bruto += peso * r;
+        nuevos[simbolo] = peso * (1 + r);
+      }
+      // Los pesos derivan con los precios antes de rebalancear.
+      const total = 1 + bruto;
+      f.pesos = Object.fromEntries(Object.entries(nuevos).map(([s, v]) => [s, v / total]));
+      f.caja = (f.caja * (1 + P.rentabilidadCaja)) / total;
+      f.valor *= total - P.comisionFondo;
+    }
+  }
+
+  /**
+   * Cada fondo ajusta su cartera según lo que ha reportado: COMPRA lleva la
+   * posición a peso completo, REDUCE la parte por la mitad, VENDE la cierra.
+   */
+  #rebalancearFondos({ inicial = false } = {}) {
+    const P = MockMarketService.PARAMETROS;
+    for (const f of this.#fondos) {
+      const movimientos = this.#movimientosFondos.filter((m) => m.fondo === f.fondo);
+      const pesoCompleto = P.inversionMaximaFondo / movimientos.length;
+      const objetivo = {};
+      for (const { simbolo, movimiento } of movimientos) {
+        const actual = f.pesos[simbolo] ?? 0;
+        if (movimiento === 'COMPRA' || (inicial && movimiento !== 'VENDE')) objetivo[simbolo] = pesoCompleto;
+        else if (movimiento === 'MANTIENE') objetivo[simbolo] = actual;
+        else if (movimiento === 'REDUCE') objetivo[simbolo] = actual / 2;
+      }
+      const invertido = Object.values(objetivo).reduce((a, b) => a + b, 0);
+      const escala = invertido > P.inversionMaximaFondo ? P.inversionMaximaFondo / invertido : 1;
+      f.pesos = Object.fromEntries(Object.entries(objetivo).filter(([, w]) => w > 0).map(([s, w]) => [s, w * escala]));
+      f.caja = 1 - invertido * escala;
+    }
   }
 
   #calcularMovimientosFondos() {

@@ -18,11 +18,20 @@ const FILL_SIDES = { COMPRA: 'BUY', VENTA: 'SELL' };
 export class MockMarketAdapter extends MarketAdapter {
   #service;
   #connected = false;
+  #filingLag;
+  #filingHistory = [];
 
-  /** @param {MockMarketService} [service] Inyectable para tests. */
-  constructor(service = new MockMarketService()) {
+  /**
+   * @param {MockMarketService} [service] Inyectable para tests.
+   * @param {Object} [options]
+   * @param {number} [options.filingLag=0] Trimestres de retraso con que se conocen
+   *   los movimientos de los fondos. En la vida real los informes de la CNMV
+   *   llegan semanas después del cierre: con 1 el juego es más realista.
+   */
+  constructor(service = new MockMarketService(), { filingLag = 0 } = {}) {
     super();
     this.#service = service;
+    this.#filingLag = filingLag;
   }
 
   get name() {
@@ -42,6 +51,7 @@ export class MockMarketAdapter extends MarketAdapter {
       movimientosFondos: this.#service.obtenerMovimientosFondos(),
       evento: this.#service.obtenerUltimoEvento(),
       indiceReferencia: this.#service.obtenerIndiceReferencia(),
+      fondos: this.#service.obtenerFondos(),
     });
   }
 
@@ -65,7 +75,10 @@ export class MockMarketAdapter extends MarketAdapter {
 
   // ── Traducción ───────────────────────────────────────────────────────────
 
-  #toSnapshot({ reloj, empresas, movimientosFondos, evento, indiceReferencia }) {
+  #toSnapshot({ reloj, empresas, movimientosFondos, evento, indiceReferencia, fondos }) {
+    if (this.#filingHistory.at(-1)?.indice !== reloj.indice) this.#filingHistory.push({ indice: reloj.indice, movimientosFondos });
+    const visible = this.#filingHistory.filter((h) => h.indice <= reloj.indice - this.#filingLag).at(-1);
+    movimientosFondos = visible?.movimientosFondos ?? [];
     return {
       clock: { index: reloj.indice, label: reloj.etiqueta.replace('-', ' ') },
       companies: empresas.map(toCompany),
@@ -76,6 +89,7 @@ export class MockMarketAdapter extends MarketAdapter {
       })),
       event: evento ? toEvent(evento) : null,
       benchmark: indiceReferencia,
+      funds: fondos.map((f) => ({ name: f.fondo, nav: f.valor, cash: f.caja, weights: f.pesos })),
     };
   }
 

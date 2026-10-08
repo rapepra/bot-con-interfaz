@@ -65,7 +65,10 @@ export class OverrideAlert {
       const started = performance.now();
       let raf = 0;
 
+      let decided = false;
       const finish = (decision) => {
+        if (decided) return; // doble clic o clic + fin de cuenta atrás
+        decided = true;
         cancelAnimationFrame(raf);
         this.layer.querySelector('.override-card').classList.add(decision === 'override' ? 'locked' : 'sold');
         setTimeout(() => {
@@ -90,7 +93,11 @@ export class OverrideAlert {
       this.layer.querySelectorAll('[data-ov]').forEach((btn) =>
         btn.addEventListener('click', () => finish(btn.dataset.ov), { once: true }),
       );
-      this.layer.querySelector('.big-red').focus({ preventScroll: true });
+      // El foco va a la tarjeta, no al botón: una pulsación de teclado
+      // despistada nunca debe decidir por el gestor.
+      const card = this.layer.querySelector('.override-card');
+      card.tabIndex = -1;
+      card.focus({ preventScroll: true });
     });
   }
 }
