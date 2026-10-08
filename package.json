@@ -1,0 +1,12 @@
+{
+  "name": "capital-club-value-tycoon",
+  "version": "0.1.0",
+  "description": "Capital Club: The Value Tycoon — simulador gamificado de Value Investing con bot Human-in-the-Loop (MVP).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx --yes http-server . -p 8080 -c-1",
+    "test": "node --test tests/*.test.js"
+  },
+  "license": "MIT"
+}

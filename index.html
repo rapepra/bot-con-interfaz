@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Capital Club · The Value Tycoon</title>
+    <meta name="description" content="Simulador gamificado de Value Investing con un bot de trading Human-in-the-Loop." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=VT323&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="src/styles/terminal.css" />
+    <!-- Phaser como script clásico: queda disponible como global antes de los módulos. -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  </head>
+  <body>
+    <!-- ░░ Lienzo de Phaser (oficina isométrica) ░░ -->
+    <div id="game" aria-label="Oficina isométrica de Capital Club"></div>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <!-- ░░ HUD superior ░░ -->
+    <header id="hud" class="hud glass">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">◆</span>
+        <div>
+          <strong>CAPITAL CLUB</strong>
+          <small>THE VALUE TYCOON</small>
+        </div>
+      </div>
+      <dl class="hud-stats">
+        <div><dt>TRIMESTRE</dt><dd data-hud="quarter">—</dd></div>
+        <div><dt>NAV</dt><dd><span data-hud="nav">—</span> <small data-hud="return"></small></dd></div>
+        <div class="hide-sm"><dt>LIQUIDEZ</dt><dd data-hud="cash">—</dd></div>
+        <div><dt>ALPHA</dt><dd data-hud="alpha">—</dd></div>
+        <div class="hide-sm"><dt>RANGO</dt><dd data-hud="rank" class="rank">—</dd></div>
+      </dl>
+    </header>
+
+    <!-- ░░ Dock de accesos rápidos ░░ -->
+    <nav class="dock glass" aria-label="Terminales">
+      <button data-open="portfolio"><kbd>F1</kbd>PORT</button>
+      <button data-open="research"><kbd>F2</kbd>RSCH</button>
+      <button data-open="bot"><kbd>F3</kbd>BOT</button>
+    </nav>
+
+    <!-- ░░ Botón global de avance ░░ -->
+    <button id="advance" class="advance">
+      <span class="icon" aria-hidden="true">▶▶</span>
+      <span class="label">AVANZAR TRIMESTRE</span>
+      <kbd>ESPACIO</kbd>
+    </button>
+
+    <!-- ░░ Cinta de cotizaciones ░░ -->
+    <div class="tape" aria-hidden="true"><div id="ticker-track" class="ticker-track"></div></div>
+
+    <!-- ░░ Paneles-terminal (se abren desde la oficina) ░░ -->
+    <aside id="panel-portfolio" class="terminal glass" hidden aria-label="Terminal de portfolio">
+      <header class="panel-head">
+        <span class="fn">PORT &lt;GO&gt;</span>
+        <h2>PORTFOLIO MONITOR <small>CAPITAL CLUB DEEP VALUE FI</small></h2>
+        <button class="close" data-close aria-label="Cerrar">ESC ✕</button>
+      </header>
+      <div class="panel-body"></div>
+    </aside>
+
+    <aside id="panel-research" class="terminal glass" hidden aria-label="Mesa del analista">
+      <header class="panel-head">
+        <span class="fn amber">RSCH &lt;GO&gt;</span>
+        <h2>RESEARCH DESK <small>FUNDAMENTALES · CARTAS DE FONDOS</small></h2>
+        <button class="close" data-close aria-label="Cerrar">ESC ✕</button>
+      </header>
+      <div class="panel-body"></div>
+    </aside>
+
+    <aside id="panel-bot" class="terminal glass" hidden aria-label="Consola del bot">
+      <header class="panel-head">
+        <span class="fn cyan">BOT &lt;GO&gt;</span>
+        <h2>ALGO CONSOLE <small>HUMAN-IN-THE-LOOP</small></h2>
+        <button class="close" data-close aria-label="Cerrar">ESC ✕</button>
+      </header>
+      <div class="panel-body"></div>
+    </aside>
+
+    <!-- ░░ Alerta de Override ░░ -->
+    <div id="override-layer" hidden></div>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <!-- ░░ Arranque estilo BIOS ░░ -->
+    <div id="boot" class="boot">
+      <ol class="boot-lines"></ol>
+      <p class="boot-skip">clic o tecla para saltar</p>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
